@@ -1,0 +1,3 @@
+﻿node_modules/
+server/db.sqlite
+.env

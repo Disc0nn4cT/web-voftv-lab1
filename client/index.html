@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="uk">
+<meta charset="utf-8" />
+<title>Lab 1 — Scanner MVP</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 20px; }
+  .row { margin: 8px 0; } label { display: inline-block; width: 120px; }
+  .signal { padding:6px 10px; border:1px solid #ddd; border-radius:6px; margin:6px 0; }
+</style>
+
+<h1>Voices-style Scanner (MVP)</h1>
+
+<div class="row">
+  <label for="az">Азимут (0–359):</label>
+  <input id="az" type="range" min="0" max="359" value="0" oninput="azOut.textContent=value">
+  <span id="azOut">0</span>
+</div>
+<div class="row">
+  <label for="el">Кут підйому (0–90):</label>
+  <input id="el" type="range" min="0" max="90" value="0" oninput="elOut.textContent=value">
+  <span id="elOut">0</span>
+</div>
+<div class="row">
+  <button id="scanBtn">Scan</button>
+  <button id="historyBtn">Load history</button>
+</div>
+<div id="log"></div>
+
+<script>
+const az = document.getElementById('az');
+const el = document.getElementById('el');
+const log = document.getElementById('log');
+function addLine(t){ const d=document.createElement('div'); d.className='signal'; d.textContent=t; log.prepend(d); }
+
+document.getElementById('scanBtn').addEventListener('click', async () => {
+  const resp = await fetch(`/signal?az=${az.value}&el=${el.value}`);
+  const data = await resp.json();
+  if (resp.ok) addLine(`[#${data.id}] az=${data.az} el=${data.el} strength=${data.strength} payload=${data.payload}`);
+  else addLine(`ERROR: ${data.error}`);
+});
+
+document.getElementById('historyBtn').addEventListener('click', async () => {
+  const resp = await fetch('/signals'); const items = await resp.json(); log.innerHTML='';
+  for (const s of items) addLine(`[#${s.id}] az=${s.az} el=${s.el} strength=${s.strength} payload=${s.payload} @ ${s.created_at}`);
+});
+</script>
+</html>
