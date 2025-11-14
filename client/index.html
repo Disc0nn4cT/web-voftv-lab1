@@ -1,47 +1,136 @@
 <!doctype html>
 <html lang="uk">
-<meta charset="utf-8" />
-<title>Lab 1 — Scanner MVP</title>
-<style>
-  body { font-family: system-ui, sans-serif; padding: 20px; }
-  .row { margin: 8px 0; } label { display: inline-block; width: 120px; }
-  .signal { padding:6px 10px; border:1px solid #ddd; border-radius:6px; margin:6px 0; }
-</style>
+  <meta charset="utf-8" />
+  <title>Lab 1 — Scanner MVP</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; }
+    .row { margin: 8px 0; }
+    label { display: inline-block; width: 120px; }
+    .panel { display:flex; gap:16px; align-items:flex-start; }
+    .pad { width:300px; height:300px; border:1px solid #bbb; position:relative; user-select:none; touch-action:none; }
+    .dot { width:10px; height:10px; border-radius:50%; border:2px solid #333; background:#fff; position:absolute; left:145px; top:145px; pointer-events:none; }
+    .signal { padding:6px 10px; border:1px solid #ddd; border-radius:6px; margin:6px 0; }
+  </style>
 
-<h1>Voices-style Scanner (MVP)</h1>
+  <h1>Satellite-style Scanner (MVP)</h1>
 
-<div class="row">
-  <label for="az">Азимут (0–359):</label>
-  <input id="az" type="range" min="0" max="359" value="0" oninput="azOut.textContent=value">
-  <span id="azOut">0</span>
-</div>
-<div class="row">
-  <label for="el">Кут підйому (0–90):</label>
-  <input id="el" type="range" min="0" max="90" value="0" oninput="elOut.textContent=value">
-  <span id="elOut">0</span>
-</div>
-<div class="row">
-  <button id="scanBtn">Scan</button>
-  <button id="historyBtn">Load history</button>
-</div>
-<div id="log"></div>
+  <!-- Панель керування (трекпад + показ az/el + Scan) -->
+  <div class="panel">
+    <div id="pad" class="pad">
+      <div id="dot" class="dot"></div>
+    </div>
+    <div>
+      <div>az: <b id="azOut">0</b></div>
+      <div>el: <b id="elOut">0</b></div>
+      <button id="scanBtn">Scan</button>
+    </div>
+  </div>
 
-<script>
-const az = document.getElementById('az');
-const el = document.getElementById('el');
-const log = document.getElementById('log');
-function addLine(t){ const d=document.createElement('div'); d.className='signal'; d.textContent=t; log.prepend(d); }
+  <!-- Відображення результатів -->
+  <h2 style="margin-top:24px;">Recent signals</h2>
+  <div id="recent"></div>
 
-document.getElementById('scanBtn').addEventListener('click', async () => {
-  const resp = await fetch(`/signal?az=${az.value}&el=${el.value}`);
-  const data = await resp.json();
-  if (resp.ok) addLine(`[#${data.id}] az=${data.az} el=${data.el} strength=${data.strength} payload=${data.payload}`);
-  else addLine(`ERROR: ${data.error}`);
-});
+  <details style="margin-top:16px;">
+    <summary style="cursor:pointer;"><b>Load history</b></summary>
+    <div style="margin:8px 0;">
+      <button id="historyBtn">Refresh history</button>
+    </div>
+    <div id="history"></div>
+  </details>
 
-document.getElementById('historyBtn').addEventListener('click', async () => {
-  const resp = await fetch('/signals'); const items = await resp.json(); log.innerHTML='';
-  for (const s of items) addLine(`[#${s.id}] az=${s.az} el=${s.el} strength=${s.strength} payload=${s.payload} @ ${s.created_at}`);
-});
-</script>
+  <script>
+    // ======== Трекпад → az/el ========
+    const pad = document.getElementById('pad');
+    const dot = document.getElementById('dot');
+    let azVal = 0, elVal = 0;
+
+    function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+    function posToAngles(px, py){
+      const w = pad.clientWidth, h = pad.clientHeight;
+      const az = Math.round((px / w) * 359);
+      const el = Math.round((1 - py / h) * 90); // інвертований Y
+      return { az: clamp(az, 0, 359), el: clamp(el, 0, 90) };
+    }
+    function setDot(px, py){
+      dot.style.left = `${clamp(px-5, 0, pad.clientWidth-10)}px`;
+      dot.style.top  = `${clamp(py-5, 0, pad.clientHeight-10)}px`;
+    }
+    function updateFromEvent(e){
+      const rect = pad.getBoundingClientRect();
+      const px = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+      const py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+      const { az, el } = posToAngles(px, py);
+      azVal = az; elVal = el;
+      document.getElementById('azOut').textContent = azVal;
+      document.getElementById('elOut').textContent = elVal;
+      setDot(px, py);
+    }
+    pad.addEventListener('pointerdown', e => { pad.setPointerCapture(e.pointerId); updateFromEvent(e); });
+    pad.addEventListener('pointermove', e => { if (e.pressure || e.buttons) updateFromEvent(e); });
+    pad.addEventListener('touchstart', updateFromEvent, {passive:true});
+    pad.addEventListener('touchmove',  updateFromEvent, {passive:true});
+
+    // ======== Рендер списків (Recent / History) ========
+    const recentBox  = document.getElementById('recent');
+    const historyBox = document.getElementById('history');
+
+    function renderSignalRow(s){
+      const wrap = document.createElement('div');
+      wrap.className = 'signal';
+
+      // заголовок: #id — name — NN%
+      const summary = document.createElement('div');
+      // якщо бекенд ще без name/hit_percent — є фолбек на strength
+      const title = s.name ?? 'Signal';
+      const hit   = (s.hit_percent ?? s.strength ?? 0) + '%';
+      summary.innerHTML = `<b>#${s.id}</b> — ${title} — ${hit}`;
+      wrap.appendChild(summary);
+
+      // деталі під спойлером
+      const det = document.createElement('details');
+      det.style.marginTop = '6px';
+      const sum = document.createElement('summary');
+      sum.textContent = 'Details';
+      det.appendChild(sum);
+
+      const pre = document.createElement('pre');
+      pre.style.margin = '6px 0 0';
+      pre.textContent = JSON.stringify({
+        az: s.az, el: s.el,
+        strength: s.strength,
+        hit_percent: s.hit_percent ?? s.strength,
+        payload: s.payload,
+        created_at: s.created_at
+      }, null, 2);
+      det.appendChild(pre);
+      wrap.appendChild(det);
+
+      return wrap;
+    }
+
+    function addRecent(s){
+      if (s.error){
+        const e = document.createElement('div');
+        e.className = 'signal';
+        e.textContent = 'ERROR: ' + s.error;
+        recentBox.prepend(e);
+        return;
+      }
+      recentBox.prepend(renderSignalRow(s));
+    }
+
+    document.getElementById('historyBtn').addEventListener('click', async () => {
+      const r = await fetch('/signals');
+      const list = await r.json();
+      historyBox.innerHTML = '';
+      for (const s of list) historyBox.appendChild(renderSignalRow(s));
+    });
+
+    // ======== Кнопка Scan ========
+    document.getElementById('scanBtn').addEventListener('click', async () => {
+      const resp = await fetch(`/signal?az=${azVal}&el=${elVal}`);
+      const data = await resp.json();
+      if (resp.ok) addRecent(data); else addRecent({ error: data.error });
+    });
+  </script>
 </html>
