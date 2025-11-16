@@ -2,17 +2,24 @@
   "name": "server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
-  "start": "node app.js",
-  "seed": "node seed.js"}
-,
+    "start": "node src/app.js",
+    "dev": "nodemon --watch src --ext js,json --exec node src/app.js",
+    
+    "seed": "node seed.js"
+  },
+  "dev": "nodemon src/app.js",
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
+  "type": "module",
+  "watch": ["src"],
+  "ignore": ["db.sqlite", "../client/*"],
   "dependencies": {
     "express": "^5.1.0",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }
