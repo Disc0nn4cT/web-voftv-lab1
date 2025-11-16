@@ -1,3 +1,5 @@
 ﻿node_modules/
 server/db.sqlite
 .env
+server/**/*.sqlite
+legacy.db.sqlite

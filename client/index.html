@@ -33,6 +33,8 @@
   <details style="margin-top:16px;">
     <summary style="cursor:pointer;"><b>Load history</b></summary>
     <div style="margin:8px 0;">
+      <button id="resetBtn" style="margin-left:8px;">Reset history</button>
+
       <button id="historyBtn">Refresh history</button>
     </div>
     <div id="history"></div>
@@ -132,5 +134,22 @@
       const data = await resp.json();
       if (resp.ok) addRecent(data); else addRecent({ error: data.error });
     });
+
+
+    // ========= Стирання історії сигналів ==========
+    document.getElementById('resetBtn').addEventListener('click', async () => {
+  if (!confirm('This will wipe the DB and reseed. Continue?')) return;
+  const r = await fetch('/admin/reset', { method: 'POST' });
+  const j = await r.json();
+  if (j.ok) {
+    // Оновлюємо обидва списки
+    recentBox.innerHTML = '';
+    document.getElementById('historyBtn').click();
+    alert('History reset done ✅');
+  } else {
+    alert('Reset failed ❌');
+  }
+});
+
   </script>
 </html>
