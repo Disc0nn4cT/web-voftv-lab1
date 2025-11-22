@@ -1,108 +1,699 @@
 <!doctype html>
 <html lang="uk">
-  <meta charset="utf-8" />
-  <title>Lab 1 — Scanner MVP</title>
-  <style>
-    body { font-family: system-ui, sans-serif; padding: 20px; }
-    .row { margin: 8px 0; }
-    label { display: inline-block; width: 120px; }
-    .panel { display:flex; gap:16px; align-items:flex-start; }
-    .pad { width:300px; height:300px; border:1px solid #bbb; position:relative; user-select:none; touch-action:none; }
-    .dot { width:10px; height:10px; border-radius:50%; border:2px solid #333; background:#fff; position:absolute; left:145px; top:145px; pointer-events:none; }
-    .signal { padding:6px 10px; border:1px solid #ddd; border-radius:6px; margin:6px 0; }
-  </style>
 
+<head>
+  <meta charset="utf-8" />
+  <title>Lab 1 — Scanner MVP (VoTV-style)</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 16px;
+      background: #111;
+      color: #eee;
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    .terminal-root {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      height: 70vh;
+      min-height: 480px;
+      box-sizing: border-box;
+      border: 3px solid #555;
+      padding: 8px;
+      background: radial-gradient(circle at 20% 0, #222, #000);
+    }
+
+    .terminal-top {
+      flex: 1 1 auto;
+      display: flex;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .trackpad-wrapper {
+      flex: 3 1 0;
+      position: relative;
+      aspect-ratio: 16 / 9;
+      background: #000;
+      overflow: hidden;
+    }
+
+    .trackpad-wrapper canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .coords-overlay {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      padding: 4px 8px;
+      background: rgba(0, 0, 0, 0.6);
+      border-radius: 4px;
+      font-family: "VT323", monospace;
+      font-size: 14px;
+      color: #ffb347;
+    }
+
+    .scan-panel {
+      flex: 1 1 0;
+      min-width: 220px;
+    }
+
+    .scan-entry {
+      margin-bottom: 4px;
+    }
+
+    .crt-panel {
+      font-family: "VT323", monospace;
+      background: #020302;
+      color: #32ff32;
+      padding: 8px;
+      border: 2px solid #2b4a2b;
+      box-shadow: 0 0 10px #0f0 inset;
+    }
+
+    .crt-panel--vertical {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+    }
+
+    .crt-panel--horizontal {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+    }
+
+    .log-line {
+      white-space: pre;
+      font-size: 14px;
+    }
+
+    .terminal-middle {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .move-controls button,
+    .scan-controls button {
+      padding: 4px 10px;
+      font-family: monospace;
+    }
+
+    .move-btn {
+      min-width: 40px;
+    }
+
+    .terminal-bottom {
+      height: 90px;
+    }
+
+    .row {
+      margin: 8px 0;
+    }
+
+    .signal {
+      padding: 6px 10px;
+      border: 1px solid #555;
+      border-radius: 6px;
+      margin: 6px 0;
+      background: #111;
+    }
+
+    details summary {
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
   <h1>Satellite-style Scanner (MVP)</h1>
 
-  <!-- Панель керування (трекпад + показ az/el + Scan) -->
-  <div class="panel">
-    <div id="pad" class="pad">
-      <div id="dot" class="dot"></div>
+  <div class="terminal-root">
+    <div class="terminal-top">
+      <div id="trackpad-panel" class="trackpad-wrapper">
+        <canvas id="sky-canvas"></canvas>
+        <div class="coords-overlay">
+          az: <span id="azOut">0</span>°
+          &nbsp; el: <span id="elOut">0</span>°
+        </div>
+      </div>
+      <div id="scan-panel" class="scan-panel">
+        <div id="scan-log" class="crt-panel crt-panel--vertical"></div>
+      </div>
     </div>
-    <div>
-      <div>az: <b id="azOut">0</b></div>
-      <div>el: <b id="elOut">0</b></div>
-      <button id="scanBtn">Scan</button>
+
+    <div class="terminal-middle">
+      <div class="move-controls">
+        <div style="text-align:center;">
+          <button id="btn-up" class="move-btn">↑</button>
+        </div>
+        <div>
+          <button id="btn-left" class="move-btn">←</button>
+          <button id="btn-down" class="move-btn">↓</button>
+          <button id="btn-right" class="move-btn">→</button>
+        </div>
+        <div style="font-size:12px;color:#aaa;margin-top:4px;">
+          WASD також працюють
+        </div>
+      </div>
+
+      <div class="scan-controls">
+        <button id="btn-ping">PING</button>
+        <button id="btn-scan">SCAN</button>
+      </div>
+    </div>
+
+    <div class="terminal-bottom">
+      <div id="game-log" class="crt-panel crt-panel--horizontal"></div>
     </div>
   </div>
 
-  <!-- Відображення результатів -->
   <h2 style="margin-top:24px;">Recent signals</h2>
   <div id="recent"></div>
 
   <details style="margin-top:16px;">
-    <summary style="cursor:pointer;"><b>Load history</b></summary>
+    <summary><b>Load history</b></summary>
     <div style="margin:8px 0;">
-      <button id="resetBtn" style="margin-left:8px;">Reset history</button>
-
       <button id="historyBtn">Refresh history</button>
+      <button id="resetBtn" style="margin-left:8px;">Reset history</button>
     </div>
     <div id="history"></div>
   </details>
 
   <script>
-    // ======== Трекпад → az/el ========
-    const pad = document.getElementById('pad');
-    const dot = document.getElementById('dot');
+    // ======== Глобальний стан неба ========
+    const skyState = {
+      skyWidth: 4000,
+      skyHeight: 2000,
+      stars: [],
+      beacons: [],
+      viewport: { x: 0, y: 0, width: 800, height: 450 },
+      scanInProgress: false,
+      currentTarget: null,
+      scanProgressLine: null,
+      pingCooldown: false,
+    };
+
+    let skyCanvas, skyCtx;
+    let scanLogEl, gameLogEl;
     let azVal = 0, elVal = 0;
 
-    function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-    function posToAngles(px, py){
-      const w = pad.clientWidth, h = pad.clientHeight;
-      const az = Math.round((px / w) * 359);
-      const el = Math.round((1 - py / h) * 90); // інвертований Y
-      return { az: clamp(az, 0, 359), el: clamp(el, 0, 90) };
-    }
-    function setDot(px, py){
-      dot.style.left = `${clamp(px-5, 0, pad.clientWidth-10)}px`;
-      dot.style.top  = `${clamp(py-5, 0, pad.clientHeight-10)}px`;
-    }
-    function updateFromEvent(e){
-      const rect = pad.getBoundingClientRect();
-      const px = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-      const py = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
-      const { az, el } = posToAngles(px, py);
-      azVal = az; elVal = el;
-      document.getElementById('azOut').textContent = azVal;
-      document.getElementById('elOut').textContent = elVal;
-      setDot(px, py);
-    }
-    pad.addEventListener('pointerdown', e => { pad.setPointerCapture(e.pointerId); updateFromEvent(e); });
-    pad.addEventListener('pointermove', e => { if (e.pressure || e.buttons) updateFromEvent(e); });
-    pad.addEventListener('touchstart', updateFromEvent, {passive:true});
-    pad.addEventListener('touchmove',  updateFromEvent, {passive:true});
+    const MAX_SCAN_LINES = 20;
+    const MAX_GAME_LINES = 6;
 
-    // ======== Рендер списків (Recent / History) ========
-    const recentBox  = document.getElementById('recent');
-    const historyBox = document.getElementById('history');
+    const SCAN_BOX_WIDTH = 32;
+    const MAX_SCAN_ENTRIES = 6;
 
-    function renderSignalRow(s){
-      const wrap = document.createElement('div');
-      wrap.className = 'signal';
+    function padBoxText(text) {
+      // захист від undefined/null
+      if (text === undefined || text === null) {
+        text = "";
+      } else {
+        text = String(text);
+      }
 
-      // заголовок: #id — name — NN%
-      const summary = document.createElement('div');
-      // якщо бекенд ще без name/hit_percent — є фолбек на strength
-      const title = s.name ?? 'Signal';
-      const hit   = (s.hit_percent ?? s.strength ?? 0) + '%';
+      if (text.length > SCAN_BOX_WIDTH) {
+        return text.slice(0, SCAN_BOX_WIDTH);
+      }
+      return text + " ".repeat(SCAN_BOX_WIDTH - text.length);
+    }
+    // створює рамку й повертає рядок зі шкалою, щоб оновлювати його
+    function createScanBox(initialText) {
+      if (!scanLogEl) return null;
+
+      const entry = document.createElement("div");
+      entry.className = "scan-entry";
+
+      const top = document.createElement("div");
+      const mid = document.createElement("div");
+      const bar = document.createElement("div");
+      const bottom = document.createElement("div");
+      top.className = mid.className = bar.className = bottom.className = "log-line";
+
+      const borderTop = "┏" + "━".repeat(SCAN_BOX_WIDTH + 2) + "┓";
+      const borderBot = "┗" + "━".repeat(SCAN_BOX_WIDTH + 2) + "┛";
+
+      const ts = new Date().toLocaleString(); // дата+час
+
+      top.textContent = borderTop;
+      mid.textContent = "┃ " + padBoxText(ts) + " ┃";
+      bar.textContent = "┃ " + padBoxText(initialText) + " ┃";
+      bottom.textContent = borderBot;
+
+      entry.append(top, mid, bar, bottom);
+      scanLogEl.appendChild(entry);
+
+      // обрізаємо старі рамки по entry (а не по окремих рядках)
+      while (scanLogEl.children.length > MAX_SCAN_ENTRIES) {
+        scanLogEl.removeChild(scanLogEl.firstChild);
+      }
+
+      return bar; // це рядок, який будемо оновлювати
+    }
+
+    function updateScanBoxLine(lineEl, text) {
+      if (!lineEl) return;
+      lineEl.textContent = "┃ " + padBoxText(text) + " ┃";
+    }
+
+
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+    function renderBar(progress, width = 20) {
+      const p = clamp(progress, 0, 1);
+      const filled = Math.round(p * width);
+      return "[" + "#".repeat(filled) + "_".repeat(width - filled) + "] "
+        + Math.round(p * 100).toString().padStart(3, " ") + "%";
+    }
+
+    function addScanLogLine(text) {
+      if (!scanLogEl) return;
+      const div = document.createElement("div");
+      div.className = "log-line";
+      div.textContent = text;
+      scanLogEl.appendChild(div);
+      while (scanLogEl.children.length > MAX_SCAN_LINES) {
+        scanLogEl.removeChild(scanLogEl.firstChild);
+      }
+    }
+
+    function addGameLogLine(text) {
+      if (!gameLogEl) return;
+      const div = document.createElement("div");
+      div.className = "log-line";
+      div.textContent = text;
+      gameLogEl.appendChild(div);
+      while (gameLogEl.children.length > MAX_GAME_LINES) {
+        gameLogEl.removeChild(gameLogEl.firstChild);
+      }
+    }
+
+    function initStars() {
+      const STAR_COUNT = 600;
+      skyState.stars = [];
+      for (let i = 0; i < STAR_COUNT; i++) {
+        skyState.stars.push({
+          x: Math.random() * skyState.skyWidth,
+          y: Math.random() * skyState.skyHeight,
+          radius: 0.5 + Math.random() * 1.5,
+          alpha: 0.3 + Math.random() * 0.7,
+        });
+      }
+    }
+
+    function resizeSkyCanvas() {
+      const rect = skyCanvas.parentElement.getBoundingClientRect();
+      skyCanvas.width = rect.width;
+      skyCanvas.height = rect.height;
+    }
+
+    function worldCenter() {
+      const v = skyState.viewport;
+      return {
+        x: v.x + v.width / 2,
+        y: v.y + v.height / 2,
+      };
+    }
+
+    function updateAnglesFromViewport() {
+      const center = worldCenter();
+      const az = Math.round((center.x / skyState.skyWidth) * 359);
+      const el = Math.round((1 - center.y / skyState.skyHeight) * 90);
+
+      azVal = clamp(az, 0, 359);
+      elVal = clamp(el, 0, 90);
+
+      const azOut = document.getElementById("azOut");
+      const elOut = document.getElementById("elOut");
+      if (azOut) azOut.textContent = azVal;
+      if (elOut) elOut.textContent = elVal;
+    }
+
+    function drawSky() {
+      const v = skyState.viewport;
+      const w = skyCanvas.width;
+      const h = skyCanvas.height;
+      const scaleX = w / v.width;
+      const scaleY = h / v.height;
+
+      skyCtx.fillStyle = "black";
+      skyCtx.fillRect(0, 0, w, h);
+
+      // зірки
+      for (const s of skyState.stars) {
+        if (s.x < v.x || s.x > v.x + v.width) continue;
+        if (s.y < v.y || s.y > v.y + v.height) continue;
+
+        const sx = (s.x - v.x) * scaleX;
+        const sy = (s.y - v.y) * scaleY;
+
+        skyCtx.globalAlpha = s.alpha;
+        skyCtx.beginPath();
+        skyCtx.arc(sx, sy, s.radius, 0, Math.PI * 2);
+        skyCtx.fillStyle = "#ffffff";
+        skyCtx.fill();
+      }
+      skyCtx.globalAlpha = 1;
+
+      drawBeacons(scaleX, scaleY);
+      drawBeaconGuides();
+      drawCrosshair();
+
+      checkBeaconHit();
+      updateAnglesFromViewport();
+
+      requestAnimationFrame(drawSky);
+    }
+
+    function drawCrosshair() {
+      const w = skyCanvas.width;
+      const h = skyCanvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+
+      skyCtx.strokeStyle = "#ff8800";
+      skyCtx.lineWidth = 1;
+
+      skyCtx.beginPath();
+      skyCtx.moveTo(0, cy);
+      skyCtx.lineTo(w, cy);
+      skyCtx.moveTo(cx, 0);
+      skyCtx.lineTo(cx, h);
+      skyCtx.stroke();
+
+      skyCtx.beginPath();
+      skyCtx.arc(cx, cy, 10, 0, Math.PI * 2);
+      skyCtx.stroke();
+    }
+
+    function generateBeacons() { // Beacon spawn
+      skyState.beacons = [];
+      const count = 1 + Math.floor(Math.random() * 3);
+      const now = performance.now();
+
+      const minX = skyState.viewport.width / 2;
+      const maxX = skyState.skyWidth - skyState.viewport.width / 2;
+      const minY = skyState.viewport.height / 2;
+      const maxY = skyState.skyHeight - skyState.viewport.height / 2;
+
+      for (let i = 0; i < count; i++) {
+        skyState.beacons.push({
+          x: minX + Math.random() * (maxX - minX),
+          y: minY + Math.random() * (maxY - minY),
+          guideExpiresAt: now + 5000,
+        });
+      }
+    }
+
+    function drawBeacons(scaleX, scaleY) {
+      const v = skyState.viewport;
+      skyCtx.strokeStyle = "red";
+      skyCtx.lineWidth = 2;
+      for (const b of skyState.beacons) {
+        if (b.x < v.x || b.x > v.x + v.width) continue;
+        if (b.y < v.y || b.y > v.y + v.height) continue;
+        const bx = (b.x - v.x) * scaleX;
+        const by = (b.y - v.y) * scaleY;
+        skyCtx.beginPath();
+        skyCtx.arc(bx, by, 10, 0, Math.PI * 2);
+        skyCtx.stroke();
+      }
+    }
+
+    function drawBeaconGuides() {
+      const now = performance.now();
+      const v = skyState.viewport;
+      const cx = skyCanvas.width / 2;
+      const cy = skyCanvas.height / 2;
+      const worldCenterX = v.x + v.width / 2;
+      const worldCenterY = v.y + v.height / 2;
+
+      for (const b of skyState.beacons) {
+        if (now > b.guideExpiresAt) continue;
+
+        const dx = b.x - worldCenterX;
+        const dy = b.y - worldCenterY;
+
+        // маячок уже в кадрі — направляюча не потрібна
+        if (Math.abs(dx) <= v.width / 2 && Math.abs(dy) <= v.height / 2) continue;
+
+        const angle = Math.atan2(dy, dx);
+        const maxX = skyCanvas.width / 2 - 16;
+        const maxY = skyCanvas.height / 2 - 16;
+        const fx = maxX / Math.abs(Math.cos(angle));
+        const fy = maxY / Math.abs(Math.sin(angle));
+        const dist = Math.min(fx, fy);
+
+        const gx = cx + Math.cos(angle) * dist;
+        const gy = cy + Math.sin(angle) * dist;
+
+        const alpha = Math.max(0, (b.guideExpiresAt - now) / 5000);
+
+        skyCtx.save();
+        skyCtx.globalAlpha = alpha;
+        skyCtx.strokeStyle = "red";
+        skyCtx.beginPath();
+        skyCtx.arc(gx, gy, 10, 0, Math.PI * 2);
+        skyCtx.stroke();
+        skyCtx.restore();
+      }
+    }
+
+    function moveViewport(dx, dy) {
+      if (skyState.scanInProgress || skyState.currentTarget) return;
+      const v = skyState.viewport;
+      v.x = clamp(v.x + dx, 0, skyState.skyWidth - v.width); // Cursor traveling limit
+      v.y = clamp(v.y + dy, 0, skyState.skyHeight - v.height);
+    }
+
+    const STEP_X = 40;  // Pad-map steps -> ->             <- <-
+    const STEP_Y = 30;
+
+    function setupControls() {
+      const leftBtn = document.getElementById("btn-left");
+      const rightBtn = document.getElementById("btn-right");
+      const upBtn = document.getElementById("btn-up");
+      const downBtn = document.getElementById("btn-down");
+      const pingBtn = document.getElementById("btn-ping");
+      const scanBtn = document.getElementById("btn-scan");
+
+      if (leftBtn) leftBtn.addEventListener("click", () => moveViewport(-STEP_X, 0));
+      if (rightBtn) rightBtn.addEventListener("click", () => moveViewport(STEP_X, 0));
+      if (upBtn) upBtn.addEventListener("click", () => moveViewport(0, -STEP_Y));
+      if (downBtn) downBtn.addEventListener("click", () => moveViewport(0, STEP_Y));
+
+      if (pingBtn) pingBtn.addEventListener("click", onPing);
+      if (scanBtn) {
+        scanBtn.addEventListener("click", startScan);
+        scanBtn.disabled = true;
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (skyState.scanInProgress || skyState.currentTarget) return;
+        switch (e.key.toLowerCase()) {
+          case "w": moveViewport(0, -STEP_Y); break;
+          case "s": moveViewport(0, STEP_Y); break;
+          case "a": moveViewport(-STEP_X, 0); break;
+          case "d": moveViewport(STEP_X, 0); break;
+        }
+      });
+    }
+
+    function onPing() {
+      if (skyState.scanInProgress) return;
+      if (skyState.pingCooldown) {
+        addGameLogLine("PING on cooldown...");
+        return;
+      }
+
+      skyState.pingCooldown = true;
+      generateBeacons();
+      addGameLogLine("PING sent. Beacons updated.");
+
+      const pingBtn = document.getElementById("btn-ping");
+      if (pingBtn) pingBtn.disabled = true;
+
+      const totalMs = 15000;
+      const stepMs = 200;
+      let elapsed = 0;
+
+      // створюємо рамку для цього PING
+      const progressLine = createScanBox("PING " + renderBar(0));
+
+      const timer = setInterval(() => {
+        elapsed += stepMs;
+        const progress = elapsed / totalMs;
+
+        updateScanBoxLine(progressLine, "PING " + renderBar(progress));
+
+        if (elapsed >= totalMs) {
+          clearInterval(timer);
+          skyState.pingCooldown = false;
+          if (pingBtn) pingBtn.disabled = false;
+
+          updateScanBoxLine(progressLine, "PING ready.");
+          addGameLogLine("PING recharged.");
+        }
+      }, stepMs);
+    }
+
+
+
+
+    function checkBeaconHit() {
+      if (skyState.scanInProgress || !skyState.beacons.length) return;
+
+      const v = skyState.viewport;
+      const worldCenterX = v.x + v.width / 2;
+      const worldCenterY = v.y + v.height / 2;
+      const HIT_RADIUS = 40;
+
+      for (let i = 0; i < skyState.beacons.length; i++) {
+        const b = skyState.beacons[i];
+        const dx = b.x - worldCenterX;
+        const dy = b.y - worldCenterY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= HIT_RADIUS) {
+          skyState.currentTarget = b;
+          skyState.beacons.splice(i, 1);
+          addGameLogLine("Target locked. Ready to SCAN.");
+          const scanBtn = document.getElementById("btn-scan");
+          if (scanBtn) scanBtn.disabled = false;
+
+          document.querySelectorAll(".move-btn").forEach(btn => btn.disabled = true);
+
+          break;
+        }
+      }
+    }
+
+    async function createSignalAtCurrentCoords() {
+      try {
+        const resp = await fetch(`/signal?az=${azVal}&el=${elVal}`);
+        const data = await resp.json();
+        if (resp.ok) {
+          addRecent(data);
+        } else {
+          addRecent({ error: data.error });
+        }
+      } catch (err) {
+        addRecent({ error: String(err) });
+      }
+    }
+
+    function startScan() {
+      if (!skyState.currentTarget || skyState.scanInProgress) return;
+
+      skyState.scanInProgress = true;
+
+      const scanBtn = document.getElementById("btn-scan");
+      const pingBtn = document.getElementById("btn-ping");
+      if (scanBtn) scanBtn.disabled = true;
+      if (pingBtn) pingBtn.disabled = true;
+      document.querySelectorAll(".move-btn").forEach(b => b.disabled = true);
+
+      addGameLogLine("Scanning started...");
+
+      let progress = 0;
+
+      // створюємо рамку для цього SCAN і запам’ятовуємо рядок зі шкалою
+      skyState.scanProgressLine = createScanBox("SCAN " + renderBar(progress));
+      const line = skyState.scanProgressLine;
+
+      const durationMs = 4000;
+      const stepMs = 150;
+      const interval = setInterval(() => {
+        progress += stepMs / durationMs;
+        if (progress >= 1) progress = 1;
+
+        updateScanBoxLine(line, "SCAN " + renderBar(progress));
+
+        if (progress >= 1) {
+          clearInterval(interval);
+          finishScan();
+        }
+      }, stepMs);
+    }
+
+
+    async function finishScan() {
+      const success = Math.random() < 0.8;
+
+      if (success) {
+        addGameLogLine("Scan complete. Signal stored.");
+        updateScanBoxLine(
+          skyState.scanProgressLine,
+          "SCAN OK  " + renderBar(1)
+        );
+        await createSignalAtCurrentCoords();
+      } else {
+        addGameLogLine("Scan failed: signal too weak or lost.");
+        updateScanBoxLine(
+          skyState.scanProgressLine,
+          "SCAN FAIL"
+        );
+      }
+
+      skyState.currentTarget = null;
+      skyState.scanInProgress = false;
+      skyState.scanProgressLine = null;
+
+      const scanBtn = document.getElementById("btn-scan");
+      const pingBtn = document.getElementById("btn-ping");
+      if (scanBtn) scanBtn.disabled = true;
+      if (!skyState.pingCooldown && pingBtn) pingBtn.disabled = false;
+      document.querySelectorAll(".move-btn").forEach(b => b.disabled = false);
+    }
+
+
+    // ======== Recent / History ========
+    const recentBox = document.getElementById("recent");
+    const historyBox = document.getElementById("history");
+
+    function renderSignalRow(s) {
+      const wrap = document.createElement("div");
+      wrap.className = "signal";
+
+      if (s.error) {
+        wrap.textContent = "Error: " + s.error;
+        return wrap;
+      }
+
+      const summary = document.createElement("div");
+      const title = "Signal";
+      const hit = (s.hit_percent ?? s.strength ?? 0) + "%";
       summary.innerHTML = `<b>#${s.id}</b> — ${title} — ${hit}`;
       wrap.appendChild(summary);
 
-      // деталі під спойлером
-      const det = document.createElement('details');
-      det.style.marginTop = '6px';
-      const sum = document.createElement('summary');
-      sum.textContent = 'Details';
+      const det = document.createElement("details");
+      det.style.marginTop = "6px";
+      const sum = document.createElement("summary");
+      sum.textContent = "Details";
       det.appendChild(sum);
 
-      const pre = document.createElement('pre');
-      pre.style.margin = '6px 0 0';
+      const pre = document.createElement("pre");
+      pre.style.margin = "6px 0 0";
       pre.textContent = JSON.stringify({
-        az: s.az, el: s.el,
+        az: s.az,
+        el: s.el,
         strength: s.strength,
-        hit_percent: s.hit_percent ?? s.strength,
+        hit_percent: s.hit_percent,
         payload: s.payload,
-        created_at: s.created_at
+        created_at: s.created_at,
       }, null, 2);
       det.appendChild(pre);
       wrap.appendChild(det);
@@ -110,46 +701,69 @@
       return wrap;
     }
 
-    function addRecent(s){
-      if (s.error){
-        const e = document.createElement('div');
-        e.className = 'signal';
-        e.textContent = 'ERROR: ' + s.error;
-        recentBox.prepend(e);
-        return;
+    function addRecent(s) {
+      if (!recentBox) return;
+      const row = renderSignalRow(s);
+      recentBox.prepend(row);
+      while (recentBox.children.length > 10) {
+        recentBox.removeChild(recentBox.lastChild);
       }
-      recentBox.prepend(renderSignalRow(s));
     }
 
-    document.getElementById('historyBtn').addEventListener('click', async () => {
-      const r = await fetch('/signals');
-      const list = await r.json();
-      historyBox.innerHTML = '';
-      for (const s of list) historyBox.appendChild(renderSignalRow(s));
+    async function loadHistory() {
+      if (!historyBox) return;
+      historyBox.textContent = "Loading...";
+      try {
+        const resp = await fetch("/signals");
+        const items = await resp.json();
+        historyBox.textContent = "";
+        if (!Array.isArray(items)) {
+          historyBox.textContent = "Invalid response";
+          return;
+        }
+        items.forEach(s => {
+          historyBox.appendChild(renderSignalRow(s));
+        });
+      } catch (err) {
+        historyBox.textContent = "Error loading history: " + err;
+      }
+    }
+
+    async function resetHistory() {
+      if (!confirm("This will wipe the DB and reseed. Continue?")) return;
+      try {
+        const r = await fetch("/admin/reset", { method: "POST" });
+        const j = await r.json();
+        if (j.ok) {
+          if (recentBox) recentBox.innerHTML = "";
+          await loadHistory();
+          alert("History reset done ✅");
+        } else {
+          alert("Reset failed ❌");
+        }
+      } catch (err) {
+        alert("Reset failed: " + err);
+      }
+    }
+
+    document.getElementById("historyBtn").addEventListener("click", loadHistory);
+    document.getElementById("resetBtn").addEventListener("click", resetHistory);
+
+    // ======== Ініціалізація ========
+    document.addEventListener("DOMContentLoaded", () => {
+      skyCanvas = document.getElementById("sky-canvas");
+      if (!skyCanvas) return;
+      skyCtx = skyCanvas.getContext("2d");
+      scanLogEl = document.getElementById("scan-log");
+      gameLogEl = document.getElementById("game-log");
+
+      initStars();
+      resizeSkyCanvas();
+      window.addEventListener("resize", resizeSkyCanvas);
+      setupControls();
+      requestAnimationFrame(drawSky);
     });
-
-    // ======== Кнопка Scan ========
-    document.getElementById('scanBtn').addEventListener('click', async () => {
-      const resp = await fetch(`/signal?az=${azVal}&el=${elVal}`);
-      const data = await resp.json();
-      if (resp.ok) addRecent(data); else addRecent({ error: data.error });
-    });
-
-
-    // ========= Стирання історії сигналів ==========
-    document.getElementById('resetBtn').addEventListener('click', async () => {
-  if (!confirm('This will wipe the DB and reseed. Continue?')) return;
-  const r = await fetch('/admin/reset', { method: 'POST' });
-  const j = await r.json();
-  if (j.ok) {
-    // Оновлюємо обидва списки
-    recentBox.innerHTML = '';
-    document.getElementById('historyBtn').click();
-    alert('History reset done ✅');
-  } else {
-    alert('Reset failed ❌');
-  }
-});
-
   </script>
+</body>
+
 </html>
