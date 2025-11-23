@@ -12,6 +12,9 @@ const app = express();
 const db = openDb();
 const repo = new SignalRepoSqlite(db);
 
+// парсер JSON для API(4 лаба)
+app.use(express.json());
+
 // статичний клієнт
 app.use(express.static(path.join(__dirname, '../../client')));
 
