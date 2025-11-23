@@ -1,6 +1,6 @@
 # ADR 0002 — Шарова архітектура (domain / application / infrastructure / client)
 
-- Дата: 2025-11-22
+- Дата: 2025-11-23
 - Статус: Accepted
 - Автор: Viktor Hlukhmaniuk
 
