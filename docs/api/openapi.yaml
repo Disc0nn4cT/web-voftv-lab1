@@ -1,0 +1,232 @@
+openapi: 3.0.3
+info:
+  title: VoTV Web Scanner API
+  version: 3.2.0
+  description: >
+    API навчального проєкту web-voftv-lab1.
+    Основний ресурс — Signal (результат сканування неба).
+
+servers:
+  - url: http://localhost:3000
+    description: Local dev
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /signals:
+    get:
+      summary: Get recent signals
+      operationId: listSignals
+      parameters:
+        - name: limit
+          in: query
+          description: Max number of signals to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: List of signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Signal'
+        '500':
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create new signal
+      operationId: createSignal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSignalRequest'
+      responses:
+        '201':
+          description: Signal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Signal'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /signals/{id}:
+    get:
+      summary: Get signal by id
+      operationId: getSignalById
+      parameters:
+        - $ref: '#/components/parameters/SignalId'
+      responses:
+        '200':
+          description: Signal found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Signal'
+        '404':
+          description: Signal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      summary: Update signal (partial)
+      operationId: updateSignal
+      parameters:
+        - $ref: '#/components/parameters/SignalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSignalRequest'
+      responses:
+        '200':
+          description: Updated signal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Signal'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Signal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete signal
+      operationId: deleteSignal
+      parameters:
+        - $ref: '#/components/parameters/SignalId'
+      responses:
+        '204':
+          description: Signal deleted
+        '404':
+          description: Signal not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    SignalId:
+      name: id
+      in: path
+      required: true
+      description: Identifier of the signal
+      schema:
+        type: integer
+        minimum: 1
+
+  schemas:
+    Signal:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        az:
+          type: integer
+          minimum: 0
+          maximum: 359
+          example: 180
+        el:
+          type: integer
+          minimum: 0
+          maximum: 90
+          example: 45
+        strength:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 72
+        hit_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 72
+        payload:
+          type: string
+          example: "SIG-180-45-72"
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-11-22T19:32:00.000Z"
+
+    CreateSignalRequest:
+      type: object
+      required: [az, el]
+      properties:
+        az:
+          type: integer
+          minimum: 0
+          maximum: 359
+          example: 180
+        el:
+          type: integer
+          minimum: 0
+          maximum: 90
+          example: 45
+
+    UpdateSignalRequest:
+      type: object
+      description: Fields that can be updated for a signal
+      properties:
+        strength:
+          type: integer
+          minimum: 0
+          maximum: 100
+        hit_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        payload:
+          type: string
+        # for майбутніх панелей можна додати:
+        # label, type, processed_level, isDangerous, etc.
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Signal not found"
