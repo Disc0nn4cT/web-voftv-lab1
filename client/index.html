@@ -710,24 +710,81 @@
       }
     }
 
-    async function loadHistory() {
-      if (!historyBox) return;
-      historyBox.textContent = "Loading...";
-      try {
-        const resp = await fetch("/signals");
-        const items = await resp.json();
-        historyBox.textContent = "";
-        if (!Array.isArray(items)) {
-          historyBox.textContent = "Invalid response";
-          return;
-        }
-        items.forEach(s => {
-          historyBox.appendChild(renderSignalRow(s));
-        });
-      } catch (err) {
-        historyBox.textContent = "Error loading history: " + err;
+    function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function backoff(baseMs, attempt) {
+  // 0 -> base, 1 -> 2x, 2 -> 4x
+  return baseMs * Math.pow(2, attempt);
+}
+
+async function fetchWithResilience(url, options = {}) {
+  const retries = options.retries ?? 2;
+  const baseDelayMs = options.baseDelayMs ?? 300;
+  const timeoutMs = options.timeoutMs ?? 3000;
+
+  const headers = new Headers(options.headers || {});
+  // request id from client (optional, but nice)
+  if (!headers.has("X-Request-Id") && crypto?.randomUUID) {
+    headers.set("X-Request-Id", crypto.randomUUID());
+  }
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, { ...options, headers, signal: controller.signal });
+
+      if (res.status === 429) {
+        const ra = Number(res.headers.get("Retry-After") || 1);
+        await sleep(ra * 1000);
+        if (attempt === retries) return res;
+        continue;
       }
+
+      if ([502, 503, 504].includes(res.status)) {
+        if (attempt === retries) return res;
+        await sleep(backoff(baseDelayMs, attempt));
+        continue;
+      }
+
+      return res;
+    } catch (e) {
+      // timeout / network error
+      if (attempt === retries) throw e;
+      await sleep(backoff(baseDelayMs, attempt));
+    } finally {
+      clearTimeout(t);
     }
+  }
+}
+
+
+    async function loadHistory() {
+  if (!historyBox) return;
+  historyBox.textContent = "Loading...";
+
+  try {
+    const res = await fetchWithResilience("/signals?limit=50");
+    const items = await res.json();
+
+    historyBox.textContent = "";
+
+    if (!Array.isArray(items)) {
+      historyBox.textContent = "Invalid response";
+      return;
+    }
+
+    items.forEach((s) => {
+      historyBox.appendChild(renderSignalRow(s));
+    });
+  } catch (err) {
+    historyBox.textContent = "Error loading history: " + err;
+  }
+}
+
 
     async function resetHistory() {
       if (!confirm("This will wipe the DB and reseed. Continue?")) return;
@@ -737,9 +794,9 @@
         if (j.ok) {
           if (recentBox) recentBox.innerHTML = "";
           await loadHistory();
-          alert("History reset done ✅");
+          alert("History reset done");
         } else {
-          alert("Reset failed ❌");
+          alert("Reset failed");
         }
       } catch (err) {
         alert("Reset failed: " + err);

@@ -1,100 +1,133 @@
-// оновлено на 4 лабі
-import express from 'express';
-import { CreateSignal } from '../../application/signals/CreateSignal.js';
-import { GetSignals } from '../../application/signals/GetSignals.js';
-import { GetSignalById } from '../../application/signals/GetSignalById.js';
-import { UpdateSignal } from '../../application/signals/UpdateSignal.js';
-import { DeleteSignal } from '../../application/signals/DeleteSignal.js';
+import express from "express";
+
+import { CreateSignal } from "../../application/signals/CreateSignal.js";
+import { GetSignals } from "../../application/signals/GetSignals.js";
+import { GetSignalById } from "../../application/signals/GetSignalById.js";
+import { UpdateSignal } from "../../application/signals/UpdateSignal.js";
+import { DeleteSignal } from "../../application/signals/DeleteSignal.js";
+
+// lab5
+import { rateLimit } from "./middleware/rateLimit.js";
+import { idempotencyStore } from "./middleware/idempotency.js";
+import { HttpError } from "./middleware/errors.js";
 
 export function buildSignalsRouter(repo) {
   const r = express.Router();
 
-  // Ігровий ендпоінт для Coordinates panel (GET /signal?az=&el=)
-  r.get('/signal', async (req, res) => {
+  // lab5: rate-limit only for POST /signals
+  const postSignalsRateLimit = rateLimit({
+    windowMs: 15_000,
+    max: 3,
+    retryAfterSeconds: 10,
+  });
+
+  // lab5: idempotency store (works only if Idempotency-Key header exists)
+  const idem = idempotencyStore();
+
+  // === GAME endpoint ===
+  r.get("/signal", async (req, res, next) => {
     try {
-      const az = parseInt(req.query.az, 10);
-      const el = parseInt(req.query.el, 10);
+      const az = Number.parseInt(req.query.az, 10);
+      const el = Number.parseInt(req.query.el, 10);
+
+      if (!Number.isFinite(az) || !Number.isFinite(el)) {
+        throw new HttpError(400, "invalid_input", "az and el must be numbers");
+      }
+
       const result = await CreateSignal(repo, { az, el });
       res.json(result);
     } catch (e) {
-      res.status(400).json({ error: String(e.message || e) });
+      next(e);
     }
   });
 
-  // GET /signals?limit=50 — список останніх сигналів
-  r.get('/signals', async (req, res) => {
+  // === CRUD ===
+  r.get("/signals", async (req, res, next) => {
     try {
-      const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+      const limit = req.query.limit ? Number.parseInt(req.query.limit, 10) : undefined;
       const items = await GetSignals(repo, { limit });
       res.json(items);
     } catch (e) {
-      res.status(500).json({ error: String(e.message || e) });
+      next(e);
     }
   });
 
-  // POST /signals — створення сигналу (через CreateSignal)
-  r.post('/signals', async (req, res) => {
+  r.post("/signals", postSignalsRateLimit, idem, async (req, res, next) => {
+   console.log("POST /signals content-type:", req.headers["content-type"]);
+  console.log("POST /signals body:", req.body);
     try {
       const { az, el } = req.body || {};
-      const azInt = parseInt(az, 10);
-      const elInt = parseInt(el, 10);
+      const azInt = Number.parseInt(az, 10);
+      const elInt = Number.parseInt(el, 10);
+
+      if (!Number.isFinite(azInt) || !Number.isFinite(elInt)) {
+        throw new HttpError(400, "invalid_input", "az and el must be numbers");
+      }
+
       const result = await CreateSignal(repo, { az: azInt, el: elInt });
       res.status(201).json(result);
     } catch (e) {
-      res.status(400).json({ error: String(e.message || e) });
+      next(e);
     }
   });
 
-  // GET /signals/:id — отримати сигнал за id
-  r.get('/signals/:id', async (req, res) => {
+  r.get("/signals/:id", async (req, res, next) => {
     try {
-      const signal = await GetSignalById(repo, { id: req.params.id });
-      if (!signal) {
-        return res.status(404).json({ error: 'Signal not found' });
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        throw new HttpError(400, "invalid_id", "id must be an integer");
       }
+
+      const signal = await GetSignalById(repo, { id });
+      if (!signal) throw new HttpError(404, "not_found", "Signal not found");
+
       res.json(signal);
     } catch (e) {
-      res.status(400).json({ error: String(e.message || e) });
+      next(e);
     }
   });
 
-  // PATCH /signals/:id — часткове оновлення сигналу
-  r.patch('/signals/:id', async (req, res) => {
+  r.patch("/signals/:id", async (req, res, next) => {
     try {
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        throw new HttpError(400, "invalid_id", "id must be an integer");
+      }
+
       const body = req.body || {};
       const result = await UpdateSignal(repo, {
-        id: req.params.id,
+        id,
         strength: body.strength,
-        // приймаємо і hitPercent, і hit_percent
         hitPercent: body.hitPercent ?? body.hit_percent,
         payload: body.payload,
       });
 
-      if (!result) {
-        return res.status(404).json({ error: 'Signal not found' });
-      }
+      if (!result) throw new HttpError(404, "not_found", "Signal not found");
 
       res.json(result);
     } catch (e) {
-      res.status(400).json({ error: String(e.message || e) });
+      next(e);
     }
   });
 
-  // DELETE /signals/:id — видалити сигнал
-  r.delete('/signals/:id', async (req, res) => {
+  r.delete("/signals/:id", async (req, res, next) => {
     try {
-      const ok = await DeleteSignal(repo, { id: req.params.id });
-      if (!ok) {
-        return res.status(404).json({ error: 'Signal not found' });
+      const id = Number.parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        throw new HttpError(400, "invalid_id", "id must be an integer");
       }
+
+      const ok = await DeleteSignal(repo, { id });
+      if (!ok) throw new HttpError(404, "not_found", "Signal not found");
+
       res.status(204).send();
     } catch (e) {
-      res.status(400).json({ error: String(e.message || e) });
+      next(e);
     }
   });
 
   // Health check
-  r.get('/health', (_req, res) => res.json({ ok: true }));
+  r.get("/health", (_req, res) => res.json({ ok: true }));
 
   return r;
 }

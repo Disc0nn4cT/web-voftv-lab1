@@ -1,0 +1,10 @@
+curl -i -X POST http://localhost:3000/signals -H "Content-Type: application/json" -d "{\"az\":10,\"el\":10}"
+
+//Paste in console for 201 error
+
+curl -i -X POST http://localhost:3000/signals -H "Content-Type: application/json" -d "{\"az\":10,\"el\":10}"
+
+//Paste +-5 times in console for 429 error + retry-after
+
+Pay attention to Id:(number) - idempotency-Key 
+Also check web f12 if you didn't
