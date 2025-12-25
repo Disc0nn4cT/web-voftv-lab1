@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon --watch src --ext js,json --exec node src/app.js",
+    "test": "node --test",
     "seed": "node seed.js",
     "reset": "node scripts/reset-db.js"
   },

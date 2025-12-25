@@ -1,3 +1,6 @@
+![CI](https://github.com/Disc0nn4cT/web-voftv-lab1/actions/workflows/ci.yml/badge.svg)
+
+
 # web-voftv-lab1
 
 Навчальний проєкт з дисципліни **Web-програмування** (ЛНТУ).  

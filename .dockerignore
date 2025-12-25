@@ -1,0 +1,16 @@
+.git
+**/node_modules
+npm-debug.log*
+.DS_Store
+
+# локальні БД/дані (не тягнути в образ)
+server/data
+server/*.sqlite
+server/*.sqlite3
+server/*.db
+*.db
+*.sqlite
+*.sqlite3
+
+# VS Code
+.vscode
